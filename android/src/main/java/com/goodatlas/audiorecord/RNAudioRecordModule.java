@@ -46,7 +46,7 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void init(ReadableMap options) {
+    public void init(final ReadableMap options, final Promise promise) {
         sampleRateInHz = 44100;
         if (options.hasKey("sampleRate")) {
             sampleRateInHz = options.getInt("sampleRate");
@@ -66,7 +66,8 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
             }
         }
 
-        String documentDirectoryPath = getReactApplicationContext().getFilesDir().getAbsolutePath();
+		String documentDirectoryPath = getReactApplicationContext().getFilesDir().getAbsolutePath();
+
         outFile = documentDirectoryPath + "/" + "audio.wav";
         tmpFile = documentDirectoryPath + "/" + "temp.pcm";
         if (options.hasKey("wavFile")) {
@@ -79,7 +80,14 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
 
         bufferSize = AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat);
         int recordingBufferSize = bufferSize * 3;
-        recorder = new AudioRecord(AudioSource.VOICE_RECOGNITION, sampleRateInHz, channelConfig, audioFormat, recordingBufferSize);
+        recorder = new AudioRecord(AudioSource.MIC, sampleRateInHz, channelConfig, audioFormat, recordingBufferSize);
+
+		if(recorder.getState() == AudioRecord.STATE_INITIALIZED 
+				&& bufferSize != AudioRecord.ERROR_BAD_VALUE) {
+			promise.resolve("initialized");
+		} else {
+			promise.reject("failed_initialized");
+		}
     }
 
     @ReactMethod
@@ -94,7 +102,14 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
                     int count = 0;
                     String base64Data;
                     byte[] buffer = new byte[bufferSize];
-                    FileOutputStream os = new FileOutputStream(tmpFile);
+
+					File _tmpFile = new File(tmpFile);
+
+					if(!_tmpFile.exists()) {
+						_tmpFile.createNewFile();
+					}
+
+                    FileOutputStream os = new FileOutputStream(_tmpFile, false);
 
                     while (isRecording) {
                         bytesRead = recorder.read(buffer, 0, buffer.length);
@@ -111,7 +126,7 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
                     os.close();
                     saveAsWav();
                 } catch (Exception e) {
-                    e.printStackTrace();
+					Log.e(TAG, e.getMessage(), e);
                 }
             }
         });
@@ -128,8 +143,16 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
     private void saveAsWav() {
         try {
             FileInputStream in = new FileInputStream(tmpFile);
-            FileOutputStream out = new FileOutputStream(outFile);
-            long totalAudioLen = in.getChannel().size();;
+
+			File _outFile = new File(outFile);
+
+			if(!_outFile.exists()) {
+				_outFile.createNewFile();
+			}
+
+            FileOutputStream out = new FileOutputStream(_outFile, false);
+
+            long totalAudioLen = in.getChannel().size();
             long totalDataLen = totalAudioLen + 36;
 
             addWavHeader(out, totalAudioLen, totalDataLen);
@@ -139,6 +162,7 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
             while ((bytesRead = in.read(data)) != -1) {
                 out.write(data, 0, bytesRead);
             }
+
             Log.d(TAG, "file path:" + outFile);
             Log.d(TAG, "file size:" + out.getChannel().size());
 
@@ -146,7 +170,7 @@ public class RNAudioRecordModule extends ReactContextBaseJavaModule {
             out.close();
             deleteTempFile();
         } catch (Exception e) {
-            e.printStackTrace();
+			Log.e(TAG, e.getMessage(), e);
         }
     }
 
